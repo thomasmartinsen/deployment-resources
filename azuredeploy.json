@@ -1,0 +1,246 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "uniqueName": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 24
+        },
+        "clientId": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 64
+        }
+    },
+    "variables": {
+        "insights_name": "[concat('vpc', parameters('uniqueName'), 'insights')]",
+        "storage_name": "[concat('vpc', parameters('uniqueName'), 'storage')]",
+        "gateway_name": "[concat('vpc', parameters('uniqueName'), 'gateway')]",
+        "portal_name": "[concat('vpc', parameters('uniqueName'), 'portal')]",
+        "portal_url": "[concat('https://', variables('portal_name'), '.azurewebsites.net')]",
+        "serviceplan_name": "[concat('vpc', parameters('uniqueName'), 'serviceplan')]",
+        "eventhub_namespace": "[concat('vpc', parameters('uniqueName'), 'eventhub')]",
+        "client_id": "[parameters('clientId')]",
+        "client_secret": "[guid(parameters('clientId'))]"
+    },
+    "resources": [
+        {
+            "type": "microsoft.insights/components",
+            "apiVersion": "2015-05-01",
+            "name": "[variables('insights_name')]",
+            "location": "westeurope",
+            "kind": "web",
+            "properties": {
+                "Application_Type": "web",
+                "Request_Source": "rest"
+            }
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2019-04-01",
+            "name": "[variables('storage_name')]",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "Standard_LRS",
+                "tier": "Standard"
+            },
+            "kind": "StorageV2",
+            "properties": {
+            }
+        },
+        {
+            "apiVersion": "2015-08-01",
+            "type": "Microsoft.Web/sites",
+            "name": "[variables('gateway_name')]",
+            "location": "[resourceGroup().location]",
+            "kind": "functionapp",
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', variables('serviceplan_name'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts/', variables('storage_name'))]",
+                "[resourceId('Microsoft.Insights/components', variables('insights_name'))]"
+            ],
+            "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('serviceplan_name'))]",
+                "siteConfig": {
+                    "alwaysOn": true,
+                    "appSettings": [
+                        {
+                            "name": "CustomerId",
+                            "value": "[variables('client_id')]"
+                        },
+                        {
+                            "name": "eventHubConnection",
+                            "value": "[variables('client_secret')]"
+                        },
+                        {
+                            "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                            "value": "[reference(resourceId('Microsoft.Insights/components', variables('insights_name')), '2014-04-01').InstrumentationKey]"
+                        },
+                        {
+                            "name": "AzureWebJobsStorage",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('storage_name'),';AccountKey=',listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storage_name')), '2019-06-01').keys[0].value,';EndpointSuffix=','core.windows.net')]"
+                        },
+                        {
+                            "name": "FUNCTIONS_WORKER_RUNTIME",
+                            "value": "node"
+                        },
+                        {
+                            "name": "WEBSITE_NODE_DEFAULT_VERSION",
+                            "value": "10.14.1"
+                        },
+                        {
+                            "name": "FUNCTIONS_EXTENSION_VERSION",
+                            "value": "~2"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "name": "[variables('serviceplan_name')]",
+            "apiVersion": "2018-02-01",
+            "type": "Microsoft.Web/serverfarms",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', variables('insights_name'))]"
+            ],
+            "kind": "",
+            "properties": {
+                "name": "[variables('serviceplan_name')]",
+                "workerSize": "0",
+                "workerSizeId": "0",
+                "numberOfWorkers": "1",
+                "reserved": false,
+                "hostingEnvironment": ""
+            },
+            "sku": {
+                "Tier": "Standard",
+                "Name": "S1"
+            }
+        },
+        {
+            "apiVersion": "2016-08-01",
+            "name": "[variables('portal_name')]",
+            "type": "Microsoft.Web/sites",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', variables('serviceplan_name'))]",
+                "[resourceId('Microsoft.Insights/components', variables('insights_name'))]"
+            ],
+            "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('serviceplan_name'))]",
+                "siteConfig": {
+                    "alwaysOn": true,
+                    "appSettings": [
+                        {
+                            "name": "CLIENT_ID",
+                            "value": "[variables('client_id')]"
+                        },
+                        {
+                            "name": "CLIENT_SECRET",
+                            "value": "[variables('client_secret')]"
+                        },
+                        {
+                            "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                            "value": "[reference(resourceId('Microsoft.Insights/components', variables('insights_name')), '2014-04-01').InstrumentationKey]"
+                        },
+                        {
+                            "name": "ApplicationInsightsAgent_EXTENSION_VERSION",
+                            "value": "~2"
+                        },
+                        {
+                            "name": "XDT_MicrosoftApplicationInsights_Mode",
+                            "value": "recommended"
+                        },
+                        {
+                            "name": "DiagnosticServices_EXTENSION_VERSION",
+                            "value": "~3"
+                        },
+                        {
+                            "name": "APPINSIGHTS_PROFILERFEATURE_VERSION",
+                            "value": "1.0.0"
+                        },
+                        {
+                            "name": "APPINSIGHTS_SNAPSHOTFEATURE_VERSION",
+                            "value": "1.0.0"
+                        },
+                        {
+                            "name": "InstrumentationEngine_EXTENSION_VERSION",
+                            "value": "~1"
+                        },
+                        {
+                            "name": "SnapshotDebugger_EXTENSION_VERSION",
+                            "value": "~1"
+                        },
+                        {
+                            "name": "XDT_MicrosoftApplicationInsights_BaseExtensions",
+                            "value": "~1"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "apiVersion": "2017-04-01",
+            "name": "[variables('eventhub_namespace')]",
+            "type": "Microsoft.EventHub/namespaces",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "Standard",
+                "tier": "Standard"
+            },
+            "properties": {
+                "isAutoInflateEnabled": true,
+                "maximumThroughputUnits": 10
+            },
+            "resources": [
+                {
+                    "type": "eventhubs",
+                    "apiVersion": "2017-04-01",
+                    "name": "eventhub-common",
+                    "location": "[resourceGroup().location]",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.EventHub/namespaces', variables('eventhub_namespace'))]"
+                    ],
+                    "properties": {
+                        "messageRetentionInDays": 1,
+                        "partitionCount": 2,
+                        "status": "Active",
+                        "path": "eventhub-common"
+                    }
+                },
+                {
+                    "type": "authorizationRules",
+                    "apiVersion": "2017-04-01",
+                    "name": "default",
+                    "location": "[resourceGroup().location]",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.EventHub/namespaces/eventhubs', variables('eventhub_namespace'), 'eventhub-common')]",
+                        "[resourceId('Microsoft.EventHub/namespaces', variables('eventhub_namespace'))]"
+                    ],
+                    "properties": {
+                        "rights": [
+                            "Listen",
+                            "Send"
+                        ]
+                    }
+                }
+            ]
+        }
+    ],
+    "outputs": {
+        "PortalName": {
+            "type": "string",
+            "value": "[variables('portal_name')]"
+        },
+        "PortalUrl": {
+            "type": "string",
+            "value": "[variables('portal_url')]"
+        },
+        "ClientSecret": {
+            "type": "string",
+            "value": "[variables('client_secret')]"
+        }
+    }
+}
